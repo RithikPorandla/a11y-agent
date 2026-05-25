@@ -1,0 +1,12 @@
+{
+  "name": "a11y-agent-backend-ast",
+  "version": "1.0.0",
+  "description": "High-fidelity AST post-processor helper for a11y-agent",
+  "main": "ast_parser.js",
+  "type": "module",
+  "dependencies": {
+    "@babel/parser": "^7.24.5",
+    "@babel/traverse": "^7.24.5",
+    "@babel/generator": "^7.24.5"
+  }
+}

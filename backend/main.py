@@ -75,11 +75,72 @@ def crawl_workspace(root_dir: str) -> List[Dict[str, str]]:
                     print(f"[WorkspaceCrawler] Error reading {abs_path}: {e}")
     return scanned_files
 
-def apply_precision_patch(source_code: str, original_tag: str, attributes_to_add: str) -> str:
+def apply_precision_patch(source_code: str, original_tag: str, attributes_to_add: str, filename: str = "", selector: str = "") -> str:
     """
     Safely injects attributes into an opening tag in React JSX or HTML,
     matching by structural similarity to preserve variables, types, and imports.
+    For JSX/TSX files, it uses the high-fidelity TypeScript AST Parser.
+    For HTML, it falls back to structural regex/BeautifulSoup matching.
     """
+    import subprocess
+    is_jsx = filename.endswith((".tsx", ".jsx"))
+    
+    if is_jsx:
+        try:
+            payload = {
+                "source_code": source_code,
+                "original_tag": original_tag,
+                "attributes_to_add": attributes_to_add,
+                "selector": selector
+            }
+            parser_path = os.path.join(os.path.dirname(__file__), "ast_parser.js")
+            process = subprocess.run(
+                ["node", parser_path],
+                input=json.dumps(payload),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                check=True
+            )
+            res = json.loads(process.stdout)
+            if res.get("success") and res.get("patched_code"):
+                return res["patched_code"]
+            else:
+                print(f"[AST Patcher Fallback] AST parser returned error: {res.get('error')}. Using regex fallback.")
+        except Exception as e:
+            print(f"[AST Patcher Fallback] Exception while running AST parser: {e}. Using regex fallback.")
+
+    is_html = filename.endswith(".html")
+    if is_html:
+        try:
+            soup = BeautifulSoup(source_code, "html.parser")
+            node = None
+            if selector:
+                node = soup.select_one(selector)
+            if not node:
+                tag_name_match = re.match(r'^<([a-zA-Z0-9:-]+)', original_tag)
+                if tag_name_match:
+                    name = tag_name_match.group(1)
+                    candidates = soup.find_all(name)
+                    for cand in candidates:
+                        if original_tag in str(cand) or str(cand) in original_tag:
+                            node = cand
+                            break
+            if node:
+                import shlex
+                try:
+                    for item in shlex.split(attributes_to_add):
+                        if "=" in item:
+                            k, v = item.split("=", 1)
+                            node[k] = v
+                except Exception:
+                    matches = re.findall(r'([a-zA-Z0-9_:-]+)=["\'](.*?)["\']', attributes_to_add)
+                    for k, v in matches:
+                        node[k] = v
+                return str(soup)
+        except Exception as e:
+            print(f"[HTML BeautifulSoup Patcher Fallback] Exception: {e}")
+
     # 1. Extract tag name
     tag_name_match = re.match(r'^<([a-zA-Z0-9:-]+)', original_tag)
     if not tag_name_match:
@@ -282,7 +343,7 @@ async def scan_files(payloads: List[HTMLPayload]):
 
         patched_content = html_content
         for pv in processed_violations:
-            patched_content = apply_precision_patch(patched_content, pv["html"], pv["suggestion"])
+            patched_content = apply_precision_patch(patched_content, pv["html"], pv["suggestion"], filename, pv["selector"])
 
         results.append({
             "filename": filename,
@@ -364,7 +425,7 @@ async def scan_workspace():
 
         patched_content = html_content
         for pv in processed_violations:
-            patched_content = apply_precision_patch(patched_content, pv["html"], pv["suggestion"])
+            patched_content = apply_precision_patch(patched_content, pv["html"], pv["suggestion"], filename, pv["selector"])
 
         results.append({
             "filename": filename,
@@ -399,7 +460,7 @@ async def patch_file(payload: PatchPayload):
         target_v = next((v for v in violations if v["id"] == p.id), None)
         
         if target_v:
-            content = apply_precision_patch(content, target_v["html"], p.attribute_value)
+            content = apply_precision_patch(content, target_v["html"], p.attribute_value, filename, target_v["selector"])
             applied_count += 1
             
     SESSION_FILES[filename] = content
