@@ -1,0 +1,5 @@
+# Gitignore for A11y-Agent Backend
+.env
+__pycache__/
+*.pyc
+a11y_cache.json

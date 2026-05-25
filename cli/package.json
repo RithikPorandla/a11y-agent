@@ -1,0 +1,31 @@
+{
+  "name": "a11y-agent",
+  "version": "1.0.0",
+  "description": "Enterprise-grade AI-Generated UI Post-Processor CLI wrapper for scanning, auditing, and auto-patching accessibility (a11y) regressions in TSX/JSX/HTML templates.",
+  "type": "module",
+  "bin": {
+    "a11y-agent": "./bin/index.js"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 0"
+  },
+  "keywords": [
+    "accessibility",
+    "a11y",
+    "compiler",
+    "react",
+    "jsx",
+    "tsx",
+    "compliance",
+    "wcag",
+    "auto-patch",
+    "v0",
+    "lovable",
+    "bolt.new"
+  ],
+  "author": "Antigravity AI Pair Programmer & Google DeepMind team",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
