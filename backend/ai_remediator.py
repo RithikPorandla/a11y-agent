@@ -28,20 +28,81 @@ class AIRemediator:
     def __init__(self):
         self.api_active = client is not None
 
-    async def get_remediation(self, violation_type: str, element_html: str, context: str, meta: Dict) -> Dict[str, str]:
+    async def get_remediation(self, violation_type: str, element_html: str, context: str, meta: Dict, filename: str = "", selector: str = "") -> Dict[str, str]:
         """
         Orchestrates accessibility remediation. Calls Gemini if key is provided,
         otherwise delegates to high-fidelity mock heuristic generator.
         """
         if self.api_active:
-            return await self._call_gemini_api(violation_type, element_html, context, meta)
+            return await self._call_gemini_api(violation_type, element_html, context, meta, filename, selector)
         else:
             return await self._simulate_remediation(violation_type, element_html, context, meta)
 
-    async def _call_gemini_api(self, violation_type: str, element_html: str, context: str, meta: Dict) -> Dict[str, str]:
+    async def _call_gemini_api(self, violation_type: str, element_html: str, context: str, meta: Dict, filename: str = "", selector: str = "") -> Dict[str, str]:
         """
         Executes real Gemini API visual/structural analysis.
         """
+        default_img_path = None
+        focused_img_path = None
+        
+        if filename and selector:
+            workspace_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+            abs_file_path = os.path.join(workspace_dir, filename)
+            
+            if os.path.exists(abs_file_path):
+                try:
+                    import subprocess
+                    import json
+                    
+                    payload = {
+                        "file_path": abs_file_path,
+                        "selector": selector
+                    }
+                    
+                    auditor_path = os.path.join(os.path.dirname(__file__), "visual_auditor.js")
+                    process = subprocess.run(
+                        ["node", auditor_path],
+                        input=json.dumps(payload),
+                        capture_output=True,
+                        text=True,
+                        encoding="utf-8",
+                        check=True
+                    )
+                    
+                    res = json.loads(process.stdout)
+                    if res.get("success"):
+                        default_img_path = res["default_image"]
+                        focused_img_path = res["focused_image"]
+                except Exception as e:
+                    print(f"[Visual Auditor Subprocess Error] {e}")
+
+        contents = []
+        
+        if default_img_path and focused_img_path and os.path.exists(default_img_path) and os.path.exists(focused_img_path):
+            try:
+                from google.genai import types
+                
+                with open(default_img_path, "rb") as f:
+                    default_bytes = f.read()
+                with open(focused_img_path, "rb") as f:
+                    focused_bytes = f.read()
+                    
+                contents.append(types.Part.from_bytes(data=default_bytes, mime_type="image/png"))
+                contents.append("Above image: Bounding-box screenshot of the element in its default state.")
+                
+                contents.append(types.Part.from_bytes(data=focused_bytes, mime_type="image/png"))
+                contents.append("Above image: Bounding-box screenshot of the element in its focused state.")
+            except Exception as e:
+                print(f"[Visual Auditor Multi-modal Prep Error] {e}")
+
+        # Clean up temporary screenshots immediately
+        if default_img_path and os.path.exists(default_img_path):
+            try: os.remove(default_img_path)
+            except: pass
+        if focused_img_path and os.path.exists(focused_img_path):
+            try: os.remove(focused_img_path)
+            except: pass
+
         prompt = (
             "You are an expert accessibility (a11y) engineer specializing in React (JSX/TSX) and HTML.\n"
             "Your task is to provide the perfect HTML or React fix for a WCAG compliance violation in an AI-generated UI.\n\n"
@@ -49,12 +110,25 @@ class AIRemediator:
             f"Target Element HTML: {element_html}\n"
             f"Surrounding Context: {context}\n"
             f"Metadata: {meta}\n\n"
+        )
+        
+        if len(contents) > 0:
+            prompt += (
+                "VISUAL AUDIT DATA:\n"
+                "We have provided screenshots of the element in both default and active focused state.\n"
+                "Please visually analyze:\n"
+                "1. Color Contrast (WCAG 1.4.3): If the text color and background color are readable. If they fail (contrast < 4.5:1), recommend a styling fix (e.g. style={{ color: '#ffffff', backgroundColor: '#1d4ed8' }}).\n"
+                "2. Focus Rings (WCAG 2.4.7): If the focused state has a highly visible outline. If not visible, recommend a styling fix (e.g. style={{ outline: '2px solid #3b82f6', outlineOffset: '2px' }}).\n\n"
+            )
+
+        prompt += (
             "Determine:\n"
             "1. The exact attribute addition needed:\n"
             "   - For 'div_button', return a string like: role=\"button\" tabIndex={0} onKeyDown={(e) => { if (e.key === \"Enter\" || e.key === \" \") { e.preventDefault(); e.currentTarget.click(); } }}\n"
             "   - For 'unlabelled_svg', return a string like: aria-label=\"Search database\"\n"
             "   - For 'input_no_label', return a string like: aria-label=\"Email address\"\n"
             "   - For 'missing_alt', return a string like: alt=\"Descriptive text\"\n"
+            "   - If visual analysis suggests style adjustments for contrast or focus rings, append them to the attributes (e.g. style={{ ... }} or class names).\n"
             "2. A concise explanation of why this fix is correct based on WCAG standards.\n\n"
             "Format your final response EXACTLY as a JSON object with two fields (do not output any markdown outside the JSON block):\n"
             "{\n"
@@ -62,20 +136,20 @@ class AIRemediator:
             "    \"explanation\": \"Brief, human-readable reason why this is correct based on WCAG standard.\"\n"
             "}"
         )
+        
+        contents.append(prompt)
 
         try:
             loop = asyncio.get_running_loop()
-            # Wrap standard blocking client call in an executor thread for async friendliness
             response = await loop.run_in_executor(
                 None,
                 lambda: client.models.generate_content(
                     model=GEMINI_MODEL,
-                    contents=prompt
+                    contents=contents
                 )
             )
             
             text = response.text.strip()
-            # Basic parsing helper for JSON in markdown blocks
             if "```json" in text:
                 text = text.split("```json")[1].split("```")[0].strip()
             elif "```" in text:
@@ -89,13 +163,48 @@ class AIRemediator:
             }
         except Exception as e:
             print(f"[AIRemediator] Gemini API error: {e}. Falling back to simulation.")
-            return await self._simulate_remediation(violation_type, element_html, context, meta)
+            return await self._simulate_remediation(violation_type, element_html, context, meta, filename, selector)
 
-    async def _simulate_remediation(self, violation_type: str, element_html: str, context: str, meta: Dict) -> Dict[str, str]:
+    async def _simulate_remediation(self, violation_type: str, element_html: str, context: str, meta: Dict, filename: str = "", selector: str = "") -> Dict[str, str]:
         """
         High-fidelity heuristic simulation. Provides highly convincing suggestions
         for React JSX templates instantly.
         """
+        if filename and selector:
+            try:
+                import subprocess
+                import json
+                workspace_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+                abs_file_path = os.path.join(workspace_dir, filename)
+                
+                if os.path.exists(abs_file_path):
+                    payload = {
+                        "file_path": abs_file_path,
+                        "selector": selector
+                    }
+                    auditor_path = os.path.join(os.path.dirname(__file__), "visual_auditor.js")
+                    process = subprocess.run(
+                        ["node", auditor_path],
+                        input=json.dumps(payload),
+                        capture_output=True,
+                        text=True,
+                        encoding="utf-8",
+                        check=True
+                    )
+                    res = json.loads(process.stdout)
+                    if res.get("success"):
+                        default_img = res["default_image"]
+                        focused_img = res["focused_image"]
+                        print(f"[Visual Auditor Simulation] Successfully rendered element screenshot:")
+                        print(f"  - Default: {os.path.basename(default_img)}")
+                        print(f"  - Focused: {os.path.basename(focused_img)}")
+                        try: os.remove(default_img)
+                        except: pass
+                        try: os.remove(focused_img)
+                        except: pass
+            except Exception as e:
+                print(f"[Visual Auditor Simulation Warning] {e}")
+
         await asyncio.sleep(0.4) # Simulate network roundtrip latency
 
         if violation_type == "missing_html_lang":

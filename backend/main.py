@@ -302,7 +302,7 @@ async def scan_files(payloads: List[HTMLPayload]):
             if suggestion:
                 explanation = "Retrieved instantly from de-duplication cache (saved API tokens)."
             else:
-                ai_res = await remediator.get_remediation(v_type, v_html, v_ctx, v_meta)
+                ai_res = await remediator.get_remediation(v_type, v_html, v_ctx, v_meta, filename, v["selector"])
                 suggestion = ai_res["attribute_value"]
                 explanation = ai_res["explanation"]
                 cache.set(cache_key, suggestion)
@@ -385,7 +385,7 @@ async def scan_workspace():
             if suggestion:
                 explanation = "Retrieved instantly from de-duplication cache (saved API tokens)."
             else:
-                ai_res = await remediator.get_remediation(v_type, v_html, v_ctx, v_meta)
+                ai_res = await remediator.get_remediation(v_type, v_html, v_ctx, v_meta, filename, v["selector"])
                 suggestion = ai_res["attribute_value"]
                 explanation = ai_res["explanation"]
                 cache.set(cache_key, suggestion)
