@@ -13,7 +13,7 @@ if os.path.exists(ENV_PATH):
                 os.environ[key.strip()] = val.strip().strip('"').strip("'")
 
 GEMINI_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GEMINI_KEY")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-pro")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3-pro")
 
 client = None
 if GEMINI_KEY:
