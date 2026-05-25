@@ -1,0 +1,74 @@
+name: 'A11y-Agent Compliance Guard'
+description: 'Enterprise-grade AI Accessibility Post-Processor PR Review Bot'
+author: 'Antigravity AI Pair Programmer & Google DeepMind team'
+branding:
+  icon: 'shield'
+  color: 'blue'
+
+inputs:
+  github-token:
+    description: 'GitHub Secret Token for posting inline PR review comments'
+    required: true
+    default: ${{ github.token }}
+  gemini-api-key:
+    description: 'Google Gemini API Key for visual color contrast and keyboard focus audits'
+    required: false
+  target-directory:
+    description: 'Target directory path to audit for accessibility compliance (defaults to ".")'
+    required: false
+    default: '.'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.9'
+
+    - name: Install Python Backend Dependencies
+      run: |
+        pip install -r backend/requirements.txt
+      shell: bash
+
+    - name: Install Node AST/Puppeteer Dependencies
+      run: |
+        npm install --prefix backend
+      shell: bash
+
+    - name: Start A11y-Agent Core Service
+      run: |
+        export GEMINI_API_KEY="${{ inputs.gemini-api-key }}"
+        python3 -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 &
+        
+        # Wait for FastAPI server to become active and healthy
+        for i in {1..30}; do
+          if curl -s http://127.0.0.1:8000/api/status > /dev/null; then
+            echo "A11y-Agent Core Service successfully booted!"
+            exit 0
+          fi
+          sleep 1
+        done
+        echo "Failed to start backend server"
+        exit 1
+      shell: bash
+
+    - name: Run A11y Audit Scan
+      run: |
+        node cli/bin/index.js scan "${{ inputs.target-directory }}"
+      shell: bash
+
+    - name: Deploy Inline PR Review Comments Bot
+      run: |
+        node cli/bin/pr-commenter.js "${{ inputs.target-directory }}"
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        GITHUB_EVENT_PATH: ${{ github.event_path }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        GEMINI_API_KEY: ${{ inputs.gemini-api-key }}

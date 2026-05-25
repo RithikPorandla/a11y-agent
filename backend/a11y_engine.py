@@ -70,6 +70,7 @@ class A11yEngine:
                     "html": str(html_tag)[:250] + "...",
                     "context": "Root document level",
                     "description": "The <html> element is missing a 'lang' attribute, which prevents screen readers from pronouncing words correctly.",
+                    "line": html_tag.sourceline or 1,
                     "meta": {}
                 })
 
@@ -110,6 +111,7 @@ class A11yEngine:
                         "html": target_html,
                         "context": parent_ctx,
                         "description": f"Clickable <{element.name}> has no role='button' or tabIndex, making it completely invisible to keyboard navigators and screen readers.",
+                        "line": element.sourceline or 1,
                         "meta": {
                             "tag": element.name,
                             "has_role": role == "button",
@@ -132,6 +134,7 @@ class A11yEngine:
                     "html": target_html,
                     "context": parent_ctx,
                     "description": "Image is missing an 'alt' attribute, making it invisible to screen readers.",
+                    "line": img.sourceline or 1,
                     "meta": {"src": src}
                 })
 
@@ -154,6 +157,7 @@ class A11yEngine:
                     "html": target_html,
                     "context": parent_ctx,
                     "description": f"Icon button has no text content or 'aria-label', leaving screen readers with no way to identify its action.",
+                    "line": btn.sourceline or 1,
                     "meta": {"has_svg": has_svg}
                 })
 
@@ -175,6 +179,7 @@ class A11yEngine:
                     "html": target_html,
                     "context": parent_ctx,
                     "description": "Link has no descriptive text, leaving its destination completely blank to screen readers.",
+                    "line": link.sourceline or 1,
                     "meta": {"href": href}
                 })
 
@@ -213,6 +218,7 @@ class A11yEngine:
                     "html": target_html,
                     "context": parent_ctx,
                     "description": f"Form control <{inp.name}> has no associated <label> or 'aria-label', making it extremely difficult for screen reader users to know what data to input.",
+                    "line": inp.sourceline or 1,
                     "meta": {
                         "id": inp_id,
                         "placeholder": placeholder,

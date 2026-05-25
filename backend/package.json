@@ -5,8 +5,9 @@
   "main": "ast_parser.js",
   "type": "module",
   "dependencies": {
+    "@babel/generator": "^7.24.5",
     "@babel/parser": "^7.24.5",
     "@babel/traverse": "^7.24.5",
-    "@babel/generator": "^7.24.5"
+    "puppeteer": "^25.0.4"
   }
 }
